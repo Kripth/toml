@@ -1,0 +1,4 @@
+name "toml"
+description "TOML implementation for D"
+authors "Kripth"
+license "Boost"
