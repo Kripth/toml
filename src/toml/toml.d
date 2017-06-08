@@ -10,7 +10,7 @@
  * Source: $(HTTP https://github.com/Kripth/toml, Kripth/_toml.d)
  * 
  */
-module toml;
+module toml.toml;
 
 import std.algorithm : canFind, min;
 import std.array : Appender;
@@ -43,27 +43,15 @@ enum TOML_TYPE : byte {
 
 struct TOMLDocument {
 
-	private TOMLValue[string] values;
+	public TOMLValue[string] table;
 
-	public this(TOMLValue[string] values) {
-		this.values = values;
-	}
-
-	/*public @property TOMLValue object() {
-		return TOMLValue(this.values);
-	}*/
-
-	public TOMLValue* opBinaryRight(string op : "in")(string key) {
-		return key in this.values;
-	}
-
-	public TOMLValue opIndex(string key) {
-		return this.values[key];
+	public this(TOMLValue[string] table) {
+		this.table = table;
 	}
 
 	public string toString() {
 		Appender!string appender;
-		foreach(key, value; this.values) {
+		foreach(key, value; this.table) {
 			appender.put(formatKey(key));
 			appender.put(" = ");
 			value.append(appender);
@@ -71,6 +59,8 @@ struct TOMLDocument {
 		}
 		return appender.data;
 	}
+
+	alias table this;
 
 }
 
@@ -103,22 +93,22 @@ struct TOMLValue {
 		}
 	}
 
-	public @property bool boolean() {
+	public inout @property @trusted bool boolean() {
 		enforce!TOMLException(this._type == TOML_TYPE.BOOL, "TOMLValue is not a boolean");
 		return this.store.boolean;
 	}
 
-	public @property string str() {
+	public inout @property @trusted string str() {
 		enforce!TOMLException(this._type == TOML_TYPE.STRING, "TOMLValue is not a string");
 		return this.store.str;
 	}
 
-	public @property long integer() {
+	public inout @property @trusted long integer() {
 		enforce!TOMLException(this._type == TOML_TYPE.INTEGER, "TOMLValue is not an integer");
 		return this.store.integer;
 	}
 
-	public @property double floating() {
+	public inout @property @trusted double floating() {
 		enforce!TOMLException(this._type == TOML_TYPE.FLOAT, "TOMLValue is not a float");
 		return this.store.floating;
 	}
@@ -128,27 +118,27 @@ struct TOMLValue {
 		return this.store.offsetDatetime;
 	}
 
-	public @property ref DateTime localDatetime() {
+	public @property @trusted ref DateTime localDatetime() {
 		enforce!TOMLException(this._type == TOML_TYPE.LOCAL_DATETIME, "TOMLValue is not a local datetime");
 		return this.store.localDatetime;
 	}
 
-	public @property ref Date localDate() {
+	public @property @trusted ref Date localDate() {
 		enforce!TOMLException(this._type == TOML_TYPE.LOCAL_DATE, "TOMLValue is not a local date");
 		return this.store.localDate;
 	}
 
-	public @property ref TimeOfDay localTime() {
+	public @property @trusted ref TimeOfDay localTime() {
 		enforce!TOMLException(this._type == TOML_TYPE.LOCAL_TIME, "TOMLValue is not a local time");
 		return this.store.localTime;
 	}
 
-	public @property ref TOMLValue[] array() {
+	public @property @trusted ref TOMLValue[] array() {
 		enforce!TOMLException(this._type == TOML_TYPE.ARRAY, "TOMLValue is not an array");
 		return this.store.array;
 	}
 
-	public @property ref TOMLValue[string] table() {
+	public @property @trusted ref TOMLValue[string] table() {
 		enforce!TOMLException(this._type == TOML_TYPE.TABLE, "TOMLValue is not a table");
 		return this.store.table;
 	}
@@ -590,7 +580,7 @@ TOMLDocument parseTOML(string data) {
 			}
 			ret = appender.data;
 		}
-		enforceParser(ret.length != 0, "Key cannot be empty");
+		enforceParser(ret.length != 0, "Key is empty or contains invalid characters");
 		return ret;
 	}
 
@@ -668,15 +658,34 @@ TOMLDocument parseTOML(string data) {
 			//TODO throw exception (missing value)
 		}
 	}
+
+	string[] readKeys() {
+		string[] keys;
+		index--;
+		do {
+			index++;
+			clear!false();
+			keys ~= readKey();
+			clear!false();
+		} while(index < data.length && data[index] == '.');
+		enforceParser(keys.length != 0, "Key cannot be empty");
+		return keys;
+	}
 	
 	void next() {
 
 		if(data[index] == '[') {
 			current = &_ret; // reset base
 			index++;
-			while(true) {
-				clear!false();
-				immutable key = readKey();
+			bool array = false;
+			if(index < data.length && data[index] == '[') {
+				index++;
+				array = true;
+			}
+			const keys = readKeys();
+			enforceParser(index < data.length && data[index++] == ']', "TODO");
+			if(array) enforceParser(index < data.length && data[index++] == ']', "TODO");
+			void update(string key) {
 				auto exist = key in *current;
 				if(exist) {
 					current = &((*exist).table());
@@ -684,16 +693,21 @@ TOMLDocument parseTOML(string data) {
 					set(key, TOMLValue(TOML_TYPE.TABLE));
 					current = &((*current)[key].table());
 				}
-				if(clear!false()) {
-					if(data[index] == ']') {
-						index++;
-						break;
-					} else {
-						enforceParser(data[index++] == '.', "Expected '.'");
-					}
+			}
+			foreach(immutable key ; keys[0..$-1]) {
+				update(key);
+			}
+			if(array) {
+				auto exist = keys[$-1] in *current;
+				if(exist) {
+					//TODO must be an array
+					(*exist).array ~= TOMLValue(TOML_TYPE.TABLE);
 				} else {
-					error("Expected ']' or '.' but found EOF"); assert(0);
+					set(keys[$-1], TOMLValue([TOMLValue(TOML_TYPE.TABLE)]));
 				}
+				current = &((*current)[keys[$-1]].array[$-1].table());
+			} else {
+				update(keys[$-1]);
 			}
 		} else {
 			readKeyValue(readKey());
@@ -1047,6 +1061,24 @@ trimmed in raw strings.
 	assert(doc["points"][0] == ["x": 1, "y": 2, "z": 3]);
 	assert(doc["points"][1] == ["x": 7, "y": 8, "z": 9]);
 	assert(doc["points"][2] == ["x": 2, "y": 4, "z": 8]);
+
+	doc = parseTOML(`
+		[[products]]
+		name = "Hammer"
+		sku = 738594937
+		
+		[[products]]
+		
+		[[products]]
+		name = "Nail"
+		sku = 284758393
+		color = "gray"
+	`);
+	assert(doc["products"].type == TOML_TYPE.ARRAY);
+	assert(doc["products"].array.length == 3);
+	assert(doc["products"][0] == ["name": TOMLValue("Hammer"), "sku": TOMLValue(738594937)]);
+	assert(doc["products"][1] == (TOMLValue[string]).init);
+	assert(doc["products"][2] == ["name": TOMLValue("Nail"), "sku": TOMLValue(284758393), "color": TOMLValue("gray")]);
 	
 	// additional tests for code coverage
 
@@ -1098,7 +1130,7 @@ trimmed in raw strings.
 
 	assert(TOMLValue(true).toString() == "true");
 	assert(TOMLValue("string").toString() == "\"string\"");
-	assert(TOMLValue("\"quoted\nstring\"").toString() == "\"\\\"quoted\\nstring\\\"\"");
+	assert(TOMLValue("\"quoted \\ \b \f \r\n \t string\"").toString() == "\"\\\"quoted \\\\ \\b \\f \\r\\n \\t string\\\"\"");
 	assert(TOMLValue(42).toString() == "42");
 	assert(TOMLValue(99.44).toString() == "99.44");
 	assert(TOMLValue(.0).toString() == "0.0");

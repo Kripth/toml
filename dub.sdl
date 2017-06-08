@@ -1,4 +1,20 @@
 name "toml"
-description "TOML implementation for D"
+description "D implementation of TOML"
 authors "Kripth"
 license "MIT"
+subPackage {
+	name "json"
+	sourcePaths "conv/json"
+	importPaths "conv/json"
+	dependency "toml" version="*"
+}
+buildType "unittest" {
+	sourcePaths "conv/json"
+	importPaths "conv/json"
+	buildOptions "unittests" "debugMode" "debugInfo"
+}
+buildType "unittest-cov" {
+	sourcePaths "conv/json"
+	importPaths "conv/json"
+	buildOptions "unittests" "coverage" "debugMode" "debugInfo"
+}
