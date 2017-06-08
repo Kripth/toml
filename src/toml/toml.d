@@ -7,7 +7,7 @@
  * License: $(HTTP https://github.com/Kripth/toml/blob/master/LICENSE, MIT)
  * Authors: Kripth
  * References: $(LINK https://github.com/toml-lang/toml/blob/master/README.md)
- * Source: $(HTTP https://github.com/Kripth/toml, Kripth/_toml.d)
+ * Source: $(HTTP https://github.com/Kripth/toml/blob/master/src/toml/toml.d, toml/_toml.d)
  * 
  */
 module toml.toml;
@@ -16,7 +16,7 @@ import std.algorithm : canFind, min;
 import std.array : Appender;
 import std.ascii : newline;
 import std.conv : to;
-import std.datetime : SysTime, DateTime, Date, TimeOfDay, TimeZone;
+import std.datetime : SysTime, DateTimeD = DateTime, Date, TimeOfDayD = TimeOfDay;
 import std.exception : enforce;
 import std.math : isNaN, isFinite;
 import std.string : join, strip, replace, indexOf;
@@ -24,20 +24,25 @@ import std.traits : isNumeric, isIntegral, isFloatingPoint, isArray, isAssociati
 import std.typecons : Tuple;
 import std.utf : encode, UseReplacementDchar;
 
+import toml.datetime : DateTime, TimeOfDay;
+
 debug import std.stdio : writeln;
 
+/**
+ * TOML type enumeration.
+ */
 enum TOML_TYPE : byte {
 
-	BOOL,
-	STRING,
-	INTEGER,
-	FLOAT,
-	OFFSET_DATETIME,
-	LOCAL_DATETIME,
-	LOCAL_DATE,
-	LOCAL_TIME,
-	ARRAY,
-	TABLE
+	BOOL,				/// Type of a TOMLValue.
+	STRING,				/// ditto
+	INTEGER,			/// ditto
+	FLOAT,				/// ditto
+	OFFSET_DATETIME,	/// ditto
+	LOCAL_DATETIME,		/// ditto
+	LOCAL_DATE,			/// ditto
+	LOCAL_TIME,			/// ditto
+	ARRAY,				/// ditto
+	TABLE				/// ditto
 
 }
 
@@ -93,51 +98,81 @@ struct TOMLValue {
 		}
 	}
 
+	/**
+	 * Throws: TOMLException if type is not TOML_TYPE.BOOL
+	 */
 	public inout @property @trusted bool boolean() {
 		enforce!TOMLException(this._type == TOML_TYPE.BOOL, "TOMLValue is not a boolean");
 		return this.store.boolean;
 	}
-
+	
+	/**
+	 * Throws: TOMLException if type is not TOML_TYPE.STRING
+	 */
 	public inout @property @trusted string str() {
 		enforce!TOMLException(this._type == TOML_TYPE.STRING, "TOMLValue is not a string");
 		return this.store.str;
 	}
-
+	
+	/**
+	 * Throws: TOMLException if type is not TOML_TYPE.INTEGER
+	 */
 	public inout @property @trusted long integer() {
 		enforce!TOMLException(this._type == TOML_TYPE.INTEGER, "TOMLValue is not an integer");
 		return this.store.integer;
 	}
-
+	
+	/**
+	 * Throws: TOMLException if type is not TOML_TYPE.FLOAT
+	 */
 	public inout @property @trusted double floating() {
 		enforce!TOMLException(this._type == TOML_TYPE.FLOAT, "TOMLValue is not a float");
 		return this.store.floating;
 	}
-
+	
+	/**
+	 * Throws: TOMLException if type is not TOML_TYPE.OFFSET_DATETIME
+	 */
 	public @property ref SysTime offsetDatetime() {
 		enforce!TOMLException(this.type == TOML_TYPE.OFFSET_DATETIME, "TOMLValue is not an offset datetime");
 		return this.store.offsetDatetime;
 	}
-
+	
+	/**
+	 * Throws: TOMLException if type is not TOML_TYPE.LOCAL_DATETIME
+	 */
 	public @property @trusted ref DateTime localDatetime() {
 		enforce!TOMLException(this._type == TOML_TYPE.LOCAL_DATETIME, "TOMLValue is not a local datetime");
 		return this.store.localDatetime;
 	}
-
+	
+	/**
+	 * Throws: TOMLException if type is not TOML_TYPE.LOCAL_DATE
+	 */
 	public @property @trusted ref Date localDate() {
 		enforce!TOMLException(this._type == TOML_TYPE.LOCAL_DATE, "TOMLValue is not a local date");
 		return this.store.localDate;
 	}
-
+	
+	/**
+	 * Throws: TOMLException if type is not TOML_TYPE.LOCAL_TIME
+	 */
 	public @property @trusted ref TimeOfDay localTime() {
 		enforce!TOMLException(this._type == TOML_TYPE.LOCAL_TIME, "TOMLValue is not a local time");
 		return this.store.localTime;
 	}
-
+	
+	/**
+	 * Throws: TOMLException if type is not TOML_TYPE.ARRAY
+	 */
 	public @property @trusted ref TOMLValue[] array() {
 		enforce!TOMLException(this._type == TOML_TYPE.ARRAY, "TOMLValue is not an array");
 		return this.store.array;
 	}
-
+	
+	/**
+	 * Throws: TOMLException if type is not TOML_TYPE.TABLE
+	 */
 	public @property @trusted ref TOMLValue[string] table() {
 		enforce!TOMLException(this._type == TOML_TYPE.TABLE, "TOMLValue is not a table");
 		return this.store.table;
@@ -182,11 +217,17 @@ struct TOMLValue {
 		} else static if(is(T == DateTime)) {
 			this.store.localDatetime = value;
 			this._type = TOML_TYPE.LOCAL_DATETIME;
+		} else static if(is(T == DateTimeD)) {
+			this.store.localDatetime = DateTime(value.date, TimeOfDay(value.timeOfDay));
+			this._type = TOML_TYPE.LOCAL_DATETIME;
 		} else static if(is(T == Date)) {
 			this.store.localDate = value;
 			this._type = TOML_TYPE.LOCAL_DATE;
 		} else static if(is(T == TimeOfDay)) {
 			this.store.localTime = value;
+			this._type = TOML_TYPE.LOCAL_TIME;
+		} else static if(is(T == TimeOfDayD)) {
+			this.store.localTime = TimeOfDay(value);
 			this._type = TOML_TYPE.LOCAL_TIME;
 		} else static if(isArray!T) {
 			static if(is(T == TOMLValue[])) {
@@ -248,10 +289,14 @@ struct TOMLValue {
 		} else static if(is(T == SysTime)) {
 			return this._type == TOML_TYPE.OFFSET_DATETIME && this.store.offsetDatetime == value;
 		} else static if(is(T == DateTime)) {
-			return this._type == TOML_TYPE.LOCAL_DATETIME && this.store.localDatetime == value;
+			return this._type == TOML_TYPE.LOCAL_DATETIME && this.store.localDatetime.dateTime == value.dateTime && this.store.localDatetime.timeOfDay.fracSecs == value.timeOfDay.fracSecs;
+		} else static if(is(T == DateTimeD)) {
+			return this._type == TOML_TYPE.LOCAL_DATETIME && this.store.localDatetime.dateTime == value;
 		} else static if(is(T == Date)) {
 			return this._type == TOML_TYPE.LOCAL_DATE && this.store.localDate == value;
 		} else static if(is(T == TimeOfDay)) {
+			return this._type == TOML_TYPE.LOCAL_TIME && this.store.localTime.timeOfDay == value.timeOfDay && this.store.localTime.fracSecs == value.fracSecs;
+		} else static if(is(T == TimeOfDayD)) {
 			return this._type == TOML_TYPE.LOCAL_TIME && this.store.localTime == value;
 		} else static if(isArray!T) {
 			if(this._type != TOML_TYPE.ARRAY || this.store.array.length != value.length) return false;
@@ -532,27 +577,24 @@ TOMLDocument parseTOML(string data) {
 		} else if(ret == "false") {
 			return TOMLValue(false);
 		} else {
-			if(ret.length >= 10 && ret[4] == '-' && ret[7] == '-') {
-				// date or datetime
-				if(ret.length >= 19 && ret[10] == 'T' && ret[13] == ':' && ret[16] == ':') {
-					// datetime
-					if(ret[19..$].canFind("-") || ret[$-1] == 'Z') {
-						// has timezone
-						return TOMLValue(SysTime.fromISOExtString(ret));
-					} else {
-						//return TOMLValue(DateTime(date, TimeOfDay.fromISOExtString(ret[11..19])));
-						//TODO fractional part support
-						return TOMLValue(DateTime.fromISOExtString(ret[0..19]));
-					}
-				} else {
-					return TOMLValue(Date.fromISOExtString(ret[0..10]));
-				}
-			} else if(ret.length >= 8 && ret[2] == ':' && ret[5] == ':') {
-				//TODO fractional support
-				return TOMLValue(TimeOfDay.fromISOExtString(ret[0..8]));
-			}
-			ret = ret.replace("_", "");
 			try {
+				if(ret.length >= 10 && ret[4] == '-' && ret[7] == '-') {
+					// date or datetime
+					if(ret.length >= 19 && ret[10] == 'T' && ret[13] == ':' && ret[16] == ':') {
+						// datetime
+						if(ret[19..$].canFind("-") || ret[$-1] == 'Z') {
+							// has timezone
+							return TOMLValue(SysTime.fromISOExtString(ret));
+						} else {
+							return TOMLValue(DateTime.fromISOExtString(ret));
+						}
+					} else {
+						return TOMLValue(Date.fromISOExtString(ret));
+					}
+				} else if(ret.length >= 8 && ret[2] == ':' && ret[5] == ':') {
+					return TOMLValue(TimeOfDay.fromISOExtString(ret));
+				}
+				ret = ret.replace("_", "");
 				if(ret.canFind('.') || ret.canFind('e') || ret.canFind('E')) {
 					return TOMLValue(to!double(ret));
 				} else {
@@ -921,7 +963,7 @@ trimmed in raw strings.
 	`);
 	assert(doc["ldt1"].type == TOML_TYPE.LOCAL_DATETIME);
 	assert(doc["ldt1"].localDatetime == DateTime.fromISOExtString("1979-05-27T07:32:00"));
-	assert(doc["ldt2"] == DateTime.fromISOExtString("1979-05-27T00:32:00")); //TODO fractional support
+	assert(doc["ldt2"] == DateTime.fromISOExtString("1979-05-27T00:32:00.999999"));
 
 	doc = parseTOML(`
 		ld1 = 1979-05-27
@@ -935,7 +977,8 @@ trimmed in raw strings.
 	`);
 	assert(doc["lt1"].type == TOML_TYPE.LOCAL_TIME);
 	assert(doc["lt1"].localTime == TimeOfDay.fromISOExtString("07:32:00"));
-	assert(doc["lt2"] == TimeOfDay.fromISOExtString("00:32:00")); //TODO fractional support
+	assert(doc["lt2"] == TimeOfDay.fromISOExtString("00:32:00.999999"));
+	assert(doc["lt2"].localTime.fracSecs.total!"msecs" == 999999);
 
 	doc = parseTOML(`
 		arr1 = [ 1, 2, 3 ]
@@ -1138,7 +1181,7 @@ trimmed in raw strings.
 	assert(TOMLValue(SysTime.fromISOExtString("1979-05-27T00:32:00-07:00")).toString() == "1979-05-27T00:32:00-07:00");
 	assert(TOMLValue(DateTime.fromISOExtString("1979-05-27T07:32:00")).toString() == "1979-05-27T07:32:00");
 	assert(TOMLValue(Date.fromISOExtString("1979-05-27")).toString() == "1979-05-27");
-	assert(TOMLValue(TimeOfDay.fromISOExtString("07:32:00")).toString() == "07:32:00");
+	assert(TOMLValue(TimeOfDay.fromISOExtString("07:32:00.999999")).toString() == "07:32:00.999999");
 	assert(TOMLValue([1, 2, 3]).toString() == "[1, 2, 3]");
 	immutable table = TOMLValue(["a": 0, "b": 1]).toString();
 	assert(table == "{ a = 0, b = 1 }" || table == "{ b = 1, a = 0 }");
@@ -1153,6 +1196,9 @@ trimmed in raw strings.
 
 }
 
+/**
+ * Exception thrown on generic TOML errors.
+ */
 class TOMLException : Exception {
 
 	public this(string message, string file=__FILE__, size_t line=__LINE__) {
@@ -1161,6 +1207,9 @@ class TOMLException : Exception {
 
 }
 
+/**
+ * Exception thrown during the parsing of TOML document.
+ */
 class TOMLParserException : TOMLException {
 
 	private Tuple!(size_t, "line", size_t, "column") _position;

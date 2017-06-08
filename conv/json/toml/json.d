@@ -7,17 +7,18 @@
  * License: $(HTTP https://github.com/Kripth/toml/blob/master/LICENSE, MIT)
  * Authors: Kripth
  * References: $(LINK https://github.com/toml-lang/toml/blob/master/README.md)
- * Source: $(HTTP https://github.com/Kripth/toml, Kripth/_toml.d)
+ * Source: $(HTTP https://github.com/Kripth/toml/blob/master/src/conv/json/toml/json.d, toml/conv/_json.d)
  * 
  */
 module toml.json;
 
 import std.json : JSONValue, JSON_TYPE;
 
-import toml.toml : TOMLDocument, TOMLValue, TOML_TYPE;
+import toml.toml : TOMLDocument, TOMLValue, TOML_TYPE, TOMLException;
 
 /**
  * Converts a TOMLValue to a JSONValue.
+ * Note: datetimes are converted to strings.
  */
 JSONValue toJSON(TOMLValue toml) {
 	final switch(toml.type) with(TOML_TYPE) {
@@ -52,7 +53,8 @@ JSONValue toJSON(TOMLDocument doc) {
 ///
 unittest {
 
-	import std.datetime;
+	import std.datetime : SysTime, Date;
+	import toml.datetime : DateTime, TimeOfDay;
 
 	assert(toJSON(TOMLValue(true)).type == JSON_TYPE.TRUE);
 	assert(toJSON(TOMLValue("string")).str == "string");
@@ -68,10 +70,14 @@ unittest {
 
 /**
  * Convert a JSONValue to a TOMLValue.
+ * Throws:
+ * 		TOMLException if the array values have different types
+ * 		TOMLExcpetion if a floating point value is not finite
+ * 		TOMLException if the json value is null
  */
 TOMLValue toTOML(JSONValue json) {
 	final switch(json.type) with(JSON_TYPE) {
-		case NULL: return TOMLValue("null");
+		case NULL: throw new TOMLException("JSONValue is null");
 		case TRUE: return TOMLValue(true);
 		case FALSE: return TOMLValue(false);
 		case STRING: return TOMLValue(json.str);
@@ -96,7 +102,11 @@ TOMLValue toTOML(JSONValue json) {
 ///
 unittest {
 
-	assert(toTOML(JSONValue.init) == "null");
+	try {
+		// null
+		toTOML(JSONValue.init); assert(0);
+	} catch(TOMLException) {}
+
 	assert(toTOML(JSONValue(true)).type == TOML_TYPE.BOOL);
 	assert(toTOML(JSONValue(false)) == false);
 	assert(toTOML(JSONValue("test")) == "test");
