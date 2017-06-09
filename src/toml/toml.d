@@ -33,16 +33,16 @@ debug import std.stdio : writeln;
  */
 enum TOML_TYPE : byte {
 
-	BOOL,				/// Type of a TOMLValue.
-	STRING,				/// ditto
-	INTEGER,			/// ditto
-	FLOAT,				/// ditto
-	OFFSET_DATETIME,	/// ditto
-	LOCAL_DATETIME,		/// ditto
-	LOCAL_DATE,			/// ditto
-	LOCAL_TIME,			/// ditto
-	ARRAY,				/// ditto
-	TABLE				/// ditto
+	BOOL,               /// Type of a TOMLValue.
+	STRING,             /// ditto
+	INTEGER,            /// ditto
+	FLOAT,              /// ditto
+	OFFSET_DATETIME,    /// ditto
+	LOCAL_DATETIME,     /// ditto
+	LOCAL_DATE,         /// ditto
+	LOCAL_TIME,         /// ditto
+	ARRAY,              /// ditto
+	TABLE               /// ditto
 
 }
 
@@ -401,11 +401,17 @@ private string formatString(string str) {
 
 /**
  * Parses a TOML document.
+ * Returns: a TOMLDocument with the parsed data
+ * Throws:
+ * 		TOMLParserException when the document's syntax is incorrect
  */
 TOMLDocument parseTOML(string data) {
 	
 	size_t index = 0;
-	
+
+	/**
+	 * Throws a TOMLParserException at the current line and column.
+	 */
 	void error(string message) {
 		if(index >= data.length) index = data.length;
 		size_t i, line, column;
@@ -420,8 +426,14 @@ TOMLDocument parseTOML(string data) {
 		throw new TOMLParserException(message, line + 1, column);
 	}
 
+	/**
+	 * Throws a TOMLParserException throught the error function if
+	 * cond is false.
+	 */
 	void enforceParser(bool cond, lazy string message) {
-		if(!cond) error(message);
+		if(!cond) {
+			error(message);
+		}
 	}
 
 	TOMLValue[string] _ret;
@@ -438,9 +450,9 @@ TOMLDocument parseTOML(string data) {
 	 */
 	bool clear(bool clear_newline=true)() {
 		static if(clear_newline) {
-			enum chars = " \b\t\n\f\r";
+			enum chars = " \t\r\n";
 		} else {
-			enum chars = " \b\t\f\r";
+			enum chars = " \t\r";
 		}
 		if(index < data.length) {
 			if(chars.canFind(data[index])) {
@@ -504,7 +516,7 @@ TOMLDocument parseTOML(string data) {
 								break;
 							}
 						}
-						enforceParser(false, "Invalid escape sequence: '\\" ~ data[index] ~ "'");
+						enforceParser(false, "Invalid escape sequence: '\\" ~ (index < data.length ? [data[index]] : "EOF") ~ "'");
 				}
 				backslash = false;
 			} else {
@@ -569,7 +581,7 @@ TOMLDocument parseTOML(string data) {
 
 	TOMLValue readSpecial() {
 		immutable start = index;
-		while(index < data.length && !" \b\f\n\r\t,]}#".canFind(data[index])) index++;
+		while(index < data.length && !" \t\r\n,]}#".canFind(data[index])) index++;
 		enforceParser(start != index, "Invalid empty type");
 		string ret = data[start..index];
 		if(ret == "true") {
@@ -688,7 +700,7 @@ TOMLDocument parseTOML(string data) {
 
 	void readKeyValue(string key) {
 		if(clear()) {
-			assert(data[index++] == '='); //TODO better exception
+			enforceParser(data[index++] == '=', "Expected '=' after key declaration");
 			if(clear!false()) {
 				set(key, readValue());
 				// there must be nothing after the key/value declaration except comments and whitespaces
