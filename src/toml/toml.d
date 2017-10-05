@@ -190,6 +190,21 @@ struct TOMLValue {
 		return this.table[key];
 	}
 
+	public int opApply(scope int delegate(string, ref TOMLValue) dg) {
+		enforce!TOMLException(this._type == TOML_TYPE.TABLE, "TOMLValue is not a table");
+
+		int result;
+
+		foreach (string key, ref value; this.store.table)
+		{
+			result = dg(key, value);
+			if (result)
+				break;
+		}
+
+		return result;
+	}
+
 	public void opAssign(T)(T value) {
 		this.assign(value);
 	}
@@ -824,6 +839,12 @@ unittest {
 	assert("key" in doc);
 	assert(doc["key"].type == TOML_TYPE.STRING);
 	assert(doc["key"].str == "value");
+
+	foreach (k, v; doc) {
+		assert(k == "key");
+		assert(v.type == TOML_TYPE.STRING);
+		assert(v.str == "value");
+	}
 
 	doc = parseTOML(`
 		key = "value"
