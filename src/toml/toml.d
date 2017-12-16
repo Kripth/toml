@@ -218,8 +218,7 @@ struct TOMLValue {
 			this.store.integer = value;
 			this._type = TOML_TYPE.INTEGER;
 		} else static if(isFloatingPoint!T) {
-			enforce!TOMLException(!value.isNaN && value.isFinite, "Floating point value must be a finite number");
-			this.store.floating = cast(double)value;
+			this.store.floating = value.to!double;
 			this._type = TOML_TYPE.FLOAT;
 		} else static if(is(T == SysTime)) {
 			this.store.offsetDatetime = value;
@@ -977,6 +976,24 @@ trimmed in raw strings.
 
 	doc = parseTOML(`flt8 = 9_224_617.445_991_228_313`);
 	assert(doc["flt8"] == 9_224_617.445_991_228_313);
+
+	doc = parseTOML(`
+		# infinity
+		sf1 = inf  # positive infinity
+		sf2 = +inf # positive infinity
+		sf3 = -inf # negative infinity
+
+		# not a number
+		sf4 = nan  # actual sNaN/qNaN encoding is implementation specific
+		sf5 = +nan # same as nan
+		sf6 = -nan # valid, actual encoding is implementation specific
+	`);
+	assert(doc["sf1"] == double.infinity);
+	assert(doc["sf2"] == double.infinity);
+	assert(doc["sf3"] == -double.infinity);
+	assert(doc["sf4"].floating.isNaN());
+	assert(doc["sf5"].floating.isNaN());
+	assert(doc["sf6"].floating.isNaN());
 
 	doc = parseTOML(`
 		bool1 = true
