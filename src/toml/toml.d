@@ -192,16 +192,11 @@ struct TOMLValue {
 
 	public int opApply(scope int delegate(string, ref TOMLValue) dg) {
 		enforce!TOMLException(this._type == TOML_TYPE.TABLE, "TOMLValue is not a table");
-
 		int result;
-
-		foreach (string key, ref value; this.store.table)
-		{
+		foreach(string key, ref value; this.store.table) {
 			result = dg(key, value);
-			if (result)
-				break;
+			if(result) break;
 		}
-
 		return result;
 	}
 
@@ -599,37 +594,48 @@ TOMLDocument parseTOML(string data) {
 		while(index < data.length && !" \t\r\n,]}#".canFind(data[index])) index++;
 		enforceParser(start != index, "Invalid empty type");
 		string ret = data[start..index];
-		if(ret == "true") {
-			return TOMLValue(true);
-		} else if(ret == "false") {
-			return TOMLValue(false);
-		} else {
-			try {
-				if(ret.length >= 10 && ret[4] == '-' && ret[7] == '-') {
-					// date or datetime
-					if(ret.length >= 19 && ret[10] == 'T' && ret[13] == ':' && ret[16] == ':') {
-						// datetime
-						if(ret[19..$].canFind("-") || ret[$-1] == 'Z') {
-							// has timezone
-							return TOMLValue(SysTime.fromISOExtString(ret));
+		switch(ret) {
+			case "true":
+				return TOMLValue(true);
+			case "false":
+				return TOMLValue(false);
+			case "inf":
+			case "+inf":
+				return TOMLValue(double.infinity);
+			case "-inf":
+				return TOMLValue(-double.infinity);
+			case "nan":
+			case "+nan":
+				return TOMLValue(double.nan);
+			case "-nan":
+				return TOMLValue(-double.nan);
+			default:
+				try {
+					if(ret.length >= 10 && ret[4] == '-' && ret[7] == '-') {
+						// date or datetime
+						if(ret.length >= 19 && ret[10] == 'T' && ret[13] == ':' && ret[16] == ':') {
+							// datetime
+							if(ret[19..$].canFind("-") || ret[$-1] == 'Z') {
+								// has timezone
+								return TOMLValue(SysTime.fromISOExtString(ret));
+							} else {
+								return TOMLValue(DateTime.fromISOExtString(ret));
+							}
 						} else {
-							return TOMLValue(DateTime.fromISOExtString(ret));
+							return TOMLValue(Date.fromISOExtString(ret));
 						}
-					} else {
-						return TOMLValue(Date.fromISOExtString(ret));
+					} else if(ret.length >= 8 && ret[2] == ':' && ret[5] == ':') {
+						return TOMLValue(TimeOfDay.fromISOExtString(ret));
 					}
-				} else if(ret.length >= 8 && ret[2] == ':' && ret[5] == ':') {
-					return TOMLValue(TimeOfDay.fromISOExtString(ret));
+					ret = ret.replace("_", "");
+					if(ret.canFind('.') || ret.canFind('e') || ret.canFind('E')) {
+						return TOMLValue(to!double(ret));
+					} else {
+						return TOMLValue(to!long(ret));
+					}
+				} catch(Exception) {
+					error("Invalid type: '" ~ data[start..index] ~ "'"); assert(0);
 				}
-				ret = ret.replace("_", "");
-				if(ret.canFind('.') || ret.canFind('e') || ret.canFind('E')) {
-					return TOMLValue(to!double(ret));
-				} else {
-					return TOMLValue(to!long(ret));
-				}
-			} catch(Exception) {
-				error("Invalid type: '" ~ data[start..index] ~ "'"); assert(0);
-			}
 		}
 	}
 	
@@ -1218,6 +1224,10 @@ trimmed in raw strings.
 	assert(TOMLValue([1, 2, 3]).toString() == "[1, 2, 3]");
 	immutable table = TOMLValue(["a": 0, "b": 1]).toString();
 	assert(table == "{ a = 0, b = 1 }" || table == "{ b = 1, a = 0 }");
+
+	foreach(key, value; TOMLValue(["0": 0, "1": 1])) {
+		assert(value == key.to!int);
+	}
 
 	TOMLValue value;
 	value = 42;
