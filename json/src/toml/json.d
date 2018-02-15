@@ -6,8 +6,8 @@
  *
  * License: $(HTTP https://github.com/Kripth/toml/blob/master/LICENSE, MIT)
  * Authors: Kripth
- * References: $(LINK https://github.com/toml-lang/toml/blob/master/README.md)
- * Source: $(HTTP https://github.com/Kripth/toml/blob/master/src/conv/json/toml/json.d, toml/conv/_json.d)
+ * References: $(LINK https://github.com/toml-lang/toml/blob/master/conv-json/README.md)
+ * Source: $(HTTP https://github.com/Kripth/toml/blob/master/src/conv-json/src/toml/json.d, toml/conv/_json.d)
  * 
  */
 module toml.json;
