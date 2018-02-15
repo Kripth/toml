@@ -828,14 +828,17 @@ TOMLDocument parseTOML(string data, TOMLOptions options=TOMLOptions.none) {
 			string[] keys = readKeys();
 			enforceParser(index < data.length && data[index++] == ']', "Invalid " ~ (array ? "array" : "table") ~ " key declaration");
 			if(array) enforceParser(index < data.length && data[index++] == ']', "Invalid array key declaration");
-			void update(string key) {
-				auto exist = key in *current;
-				if(exist) {
-					current = &((*exist).table());
-				} else {
-					set([key], TOMLValue(TOML_TYPE.TABLE));
-					current = &((*current)[key].table());
-				}
+			if(!array) {
+				//TODO only enforce if every key is a table
+				enforceParser(!tableNames.canFind(keys), "Table name has already been directly defined");
+				tableNames ~= keys;
+			}
+			void update(string key, bool allowArray=true) {
+				if(key !in *current) set([key], TOMLValue(TOML_TYPE.TABLE));
+				auto ret = (*current)[key];
+				if(ret.type == TOML_TYPE.TABLE) current = &((*current)[key].table());
+				else if(allowArray && ret.type == TOML_TYPE.ARRAY) current = &((*current)[key].array[$-1].table());
+				else error("Invalid type");
 			}
 			foreach(immutable key ; keys[0..$-1]) {
 				update(key);
@@ -850,9 +853,7 @@ TOMLDocument parseTOML(string data, TOMLOptions options=TOMLOptions.none) {
 				}
 				current = &((*current)[keys[$-1]].array[$-1].table());
 			} else {
-				enforceParser(!tableNames.canFind(keys), "Table name has already been directly defined");
-				tableNames ~= keys;
-				update(keys[$-1]);
+				update(keys[$-1], false);
 			}
 		} else {
 			readKeyValue(readKeys());
@@ -1402,14 +1403,13 @@ trimmed in raw strings.
 	assert(doc["products"][2] == ["name": TOMLValue("Nail"), "sku": TOMLValue(284758393), "color": TOMLValue("gray")]);
 
 	// nested
-	//FIXME #8
-	/+doc = parseTOML(`
+	doc = parseTOML(`
 		[[fruit]]
 		  name = "apple"
 
-  		[fruit.physical]
+		  [fruit.physical]
 		    color = "red"
-			shape = "round"
+		    shape = "round"
 
 		  [[fruit.variety]]
 		    name = "red delicious"
@@ -1423,16 +1423,15 @@ trimmed in raw strings.
 		  [[fruit.variety]]
 		    name = "plantain"
 	`);
-	assert(doc["fruits"].type == TOML_TYPE.ARRAY);
-	assert(doc["fruits"].array.length == 2);
-	assert(doc["fruits"][0]["name"] == "apple");
-	assert(doc["fruits"][0]["physical"] == ["color": "red", "shape": "round"]);
-	assert(doc["fruits"][0]["variety"][0] == ["name": "red delicious"]);
-	assert(doc["fruits"][0]["variety"][0]["name"] == "granny smith");
-	assert(doc["fruits"][1] == ["name": TOMLValue("banana"), "variety": TOMLValue(["name": "plantain"])]);+/
+	assert(doc["fruit"].type == TOML_TYPE.ARRAY);
+	assert(doc["fruit"].array.length == 2);
+	assert(doc["fruit"][0]["name"] == "apple");
+	assert(doc["fruit"][0]["physical"] == ["color": "red", "shape": "round"]);
+	assert(doc["fruit"][0]["variety"][0] == ["name": "red delicious"]);
+	assert(doc["fruit"][0]["variety"][1]["name"] == "granny smith");
+	assert(doc["fruit"][1] == ["name": TOMLValue("banana"), "variety": TOMLValue([["name": "plantain"]])]);
 
-	//FIXME #8
-	/+testError({
+	testError({
 		parseTOML(`
 			# INVALID TOML DOC
 			[[fruit]]
@@ -1445,7 +1444,7 @@ trimmed in raw strings.
 			  [fruit.variety]
 			    name = "granny smith"
 		`);
-	});+/
+	});
 
 	doc = parseTOML(`
 		points = [ { x = 1, y = 2, z = 3 },
