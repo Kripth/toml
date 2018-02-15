@@ -653,8 +653,8 @@ TOMLDocument parseTOML(string data) {
 				appender.put(data[index++]);
 			}
 			ret = appender.data;
-		}
 			enforceParser(ret.length != 0, "Key contains invalid characters");
+		}
 		return ret;
 	}
 
