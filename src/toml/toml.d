@@ -12,7 +12,7 @@
  */
 module toml.toml;
 
-import std.algorithm : canFind, min;
+import std.algorithm : canFind, min, stripRight;
 import std.array : Appender;
 import std.ascii : newline;
 import std.conv : to;
@@ -26,7 +26,15 @@ import std.utf : encode, UseReplacementDchar;
 
 import toml.datetime : DateTime, TimeOfDay;
 
-debug import std.stdio : writeln;
+/**
+ * Flags that control how a TOML document is parsed and encoded.
+ */
+enum TOMLOptions {
+
+	none = 0x00,
+	unquotedStrings = 0x01,		/// allow unquoted strings as values when parsing
+
+}
 
 /**
  * TOML type enumeration.
@@ -46,12 +54,20 @@ enum TOML_TYPE : byte {
 
 }
 
+/**
+ * Main table of a TOML document.
+ * It works as a TOMLValue with the TOML_TYPE.TABLE type.
+ */
 struct TOMLDocument {
 
 	public TOMLValue[string] table;
 
 	public this(TOMLValue[string] table) {
 		this.table = table;
+	}
+
+	public this(TOMLValue value) {
+		this(value.table);
 	}
 
 	public string toString() {
@@ -69,6 +85,9 @@ struct TOMLDocument {
 
 }
 
+/**
+ * Value of a TOML value.
+ */
 struct TOMLValue {
 
 	private union Store {
@@ -414,7 +433,7 @@ private string formatString(string str) {
  * Throws:
  * 		TOMLParserException when the document's syntax is incorrect
  */
-TOMLDocument parseTOML(string data) {
+TOMLDocument parseTOML(string data, TOMLOptions options=TOMLOptions.none) {
 	
 	size_t index = 0;
 
@@ -588,10 +607,31 @@ TOMLDocument parseTOML(string data) {
 		error("Expecting ' (single quote) but found EOF"); assert(0);
 	}
 
+	string removeUnderscores(string str, string[] ranges...) {
+		bool checkRange(char c) {
+			foreach(range ; ranges) {
+				if(c >= range[0] && c <= range[1]) return true;
+			}
+			return false;
+		}
+		bool underscore = false;
+		for(size_t i=0; i<str.length; i++) {
+			if(str[i] == '_') {
+				if(underscore || i == 0 || i == str.length - 1 || !checkRange(str[i-1]) || !checkRange(str[i+1])) throw new Exception("");
+				str = str[0..i] ~ str[i+1..$];
+				i--;
+				underscore = true;
+			} else {
+				underscore = false;
+			}
+		}
+		return str;
+	}
+
 	TOMLValue readSpecial() {
 		immutable start = index;
 		while(index < data.length && !"\t\r\n,]}#".canFind(data[index])) index++;
-		string ret = data[start..index].strip; //TODO only remove whitespaces at the end of the string
+		string ret = data[start..index].stripRight(' ');
 		enforceParser(ret.length > 0, "Invalid empty value");
 		switch(ret) {
 			case "true":
@@ -609,6 +649,7 @@ TOMLDocument parseTOML(string data) {
 			case "-nan":
 				return TOMLValue(-double.nan);
 			default:
+				immutable original = ret;
 				try {
 					if(ret.length >= 10 && ret[4] == '-' && ret[7] == '-') {
 						// date or datetime
@@ -628,15 +669,23 @@ TOMLDocument parseTOML(string data) {
 					} else if(ret.length >= 8 && ret[2] == ':' && ret[5] == ':') {
 						return TOMLValue(TimeOfDay.fromISOExtString(ret));
 					}
-					ret = ret.replace("_", "");
-					if(ret.canFind('.') || ret.canFind('e') || ret.canFind('E')) {
-						return TOMLValue(to!double(ret));
-					} else {
-						return TOMLValue(to!long(ret));
+					if(ret.length > 2 && ret[0] == '0') {
+						switch(ret[1]) {
+							case 'x': return TOMLValue(to!long(removeUnderscores(ret[2..$], "09", "AZ", "az"), 16));
+							case 'o': return TOMLValue(to!long(removeUnderscores(ret[2..$], "08"), 8));
+							case 'b': return TOMLValue(to!long(removeUnderscores(ret[2..$], "01"), 2));
+							default: break;
+						}
 					}
-				} catch(Exception) {
-					error("Invalid type: '" ~ data[start..index] ~ "'"); assert(0);
-				}
+					if(ret.canFind('.') || ret.canFind('e') || ret.canFind('E')) {
+						return TOMLValue(to!double(removeUnderscores(ret, "09")));
+					} else {
+						if(ret[0] != '0' || ret.length == 1) return TOMLValue(to!long(removeUnderscores(ret, "09")));
+					}
+				} catch(Exception) {}
+				// not a valid value at this point
+				if(options & TOMLOptions.unquotedStrings) return TOMLValue(original);
+				else error("Invalid type: '" ~ original ~ "'"); assert(0);
 		}
 	}
 	
@@ -1041,8 +1090,18 @@ trimmed in raw strings.
 	assert(doc["int6"] == 5_349_221);
 	assert(doc["int7"] == 1_2_3_4_5);
 
-	//FIXME #5
-	/+doc = parseTOML(`
+	// leading 0s not allowed
+	testError({ parseTOML(`invalid = 01`); });
+
+	// underscores must be enclosed in numbers
+	testError({ parseTOML(`invalid = _123`); });
+	testError({ parseTOML(`invalid = 123_`); });
+	testError({ parseTOML(`invalid = 123__123`); });
+	testError({ parseTOML(`invalid = 0b01_21`); });
+	testError({ parseTOML(`invalid = 0x_deadbeef`); });
+	testError({ parseTOML(`invalid = 0b0101__00`); });
+
+	doc = parseTOML(`
 		# hexadecimal with prefix 0x
 		hex1 = 0xDEADBEEF
 		hex2 = 0xdeadbeef
@@ -1059,8 +1118,10 @@ trimmed in raw strings.
 	assert(doc["hex2"] == 0xdeadbeef);
 	assert(doc["hex3"] == 0xdead_beef);
 	assert(doc["oct1"] == 342391);
-	assert(doc["oct2"] == 429);
-	assert(doc["bin1"] == 0b11010110);+/
+	assert(doc["oct2"] == 493);
+	assert(doc["bin1"] == 0b11010110);
+
+	testError({ parseTOML(`invalid = 0h111`); });
 
 	// -----
 	// Float
@@ -1419,6 +1480,15 @@ trimmed in raw strings.
 	doc = parseTOML(`test = """quoted "string"!"""`);
 	assert(doc["test"] == "quoted \"string\"!");
 
+	// options
+
+	assert(parseTOML(`raw = this is unquoted`, TOMLOptions.unquotedStrings)["raw"] == "this is unquoted");
+
+	// document
+
+	TOMLValue value = TOMLValue(["test": 44]);
+	doc = TOMLDocument(value);
+
 	// opEquals
 
 	assert(TOMLValue(true) == TOMLValue(true));
@@ -1455,7 +1525,6 @@ trimmed in raw strings.
 		assert(value == key.to!int);
 	}
 
-	TOMLValue value;
 	value = 42;
 	assert(value.type == TOML_TYPE.INTEGER);
 	assert(value == 42);
