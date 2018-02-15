@@ -467,9 +467,24 @@ TOMLDocument parseTOML(string data, TOMLOptions options=TOMLOptions.none) {
 	TOMLValue[string] _ret;
 	auto current = &_ret;
 
-	void set(string key, TOMLValue value) {
-		enforceParser(key !in *current, "Key '" ~ key ~ "' is already defined");
-		(*current)[key] = value;
+	string[][] tableNames;
+
+	void setImpl(TOMLValue[string]* table, string[] keys, string[] original, TOMLValue value) {
+		auto ptr = keys[0] in *table;
+		if(keys.length == 1) {
+			// should not be there
+			enforceParser(ptr is null, "Key is already defined");
+			(*table)[keys[0]] = value;
+		} else {
+			// must be a table
+			if(ptr !is null) enforceParser((*ptr).type == TOML_TYPE.TABLE, join(original[0..$-keys.length], ".") ~ " is already defined and is not a table");
+			else (*table)[keys[0]] = (TOMLValue[string]).init;
+			setImpl(&((*table)[keys[0]].table()), keys[1..$], original, value);
+		}
+	}
+
+	void set(string[] keys, TOMLValue value) {
+		setImpl(current, keys, keys, value);
 	}
 
 	/**
@@ -704,9 +719,22 @@ TOMLDocument parseTOML(string data, TOMLOptions options=TOMLOptions.none) {
 				appender.put(data[index++]);
 			}
 			ret = appender.data;
-			enforceParser(ret.length != 0, "Key contains invalid characters");
+			enforceParser(ret.length != 0, "Key is empty or contains invalid characters");
 		}
 		return ret;
+	}
+	
+	string[] readKeys() {
+		string[] keys;
+		index--;
+		do {
+			index++;
+			clear!false();
+			keys ~= readKey();
+			clear!false();
+		} while(index < data.length && data[index] == '.');
+		enforceParser(keys.length != 0, "Key cannot be empty");
+		return keys;
 	}
 
 	TOMLValue readValue() {
@@ -750,9 +778,9 @@ TOMLDocument parseTOML(string data, TOMLOptions options=TOMLOptions.none) {
 					bool comma = true;
 					while(data[index] != '}') { //TODO check range error
 						enforceParser(comma, "Elements of the table must be separated with a comma");
-						immutable key = readKey();
-						enforceParser(clear!false() && data[index++] == '=' && clear!false(), "Expected type after key declaration");
-						table[key] = readValue();
+						auto keys = readKeys();
+						enforceParser(clear!false() && data[index++] == '=' && clear!false(), "Expected value after key declaration");
+						setImpl(&table, keys, keys, readValue());
 						enforceParser(clear!false(), "Expected ',' or '}' but found " ~ (index < data.length ? "EOL" : "EOF"));
 						if(data[index] == ',') {
 							index++;
@@ -772,11 +800,11 @@ TOMLDocument parseTOML(string data, TOMLOptions options=TOMLOptions.none) {
 		return readSpecial();
 	}
 
-	void readKeyValue(string key) {
+	void readKeyValue(string[] keys) {
 		if(clear()) {
 			enforceParser(data[index++] == '=', "Expected '=' after key declaration");
 			if(clear!false()) {
-				set(key, readValue());
+				set(keys, readValue());
 				// there must be nothing after the key/value declaration except comments and whitespaces
 				if(clear!false()) enforceParser(data[index] == '\n', "Invalid characters after value declaration: " ~ data[index]);
 			} else {
@@ -785,19 +813,6 @@ TOMLDocument parseTOML(string data, TOMLOptions options=TOMLOptions.none) {
 		} else {
 			//TODO throw exception (missing value)
 		}
-	}
-
-	string[] readKeys() {
-		string[] keys;
-		index--;
-		do {
-			index++;
-			clear!false();
-			keys ~= readKey();
-			clear!false();
-		} while(index < data.length && data[index] == '.');
-		enforceParser(keys.length != 0, "Key cannot be empty");
-		return keys;
 	}
 	
 	void next() {
@@ -810,15 +825,15 @@ TOMLDocument parseTOML(string data, TOMLOptions options=TOMLOptions.none) {
 				index++;
 				array = true;
 			}
-			const keys = readKeys();
-			enforceParser(index < data.length && data[index++] == ']', "TODO");
-			if(array) enforceParser(index < data.length && data[index++] == ']', "TODO");
+			string[] keys = readKeys();
+			enforceParser(index < data.length && data[index++] == ']', "Invalid " ~ (array ? "array" : "table") ~ " key declaration");
+			if(array) enforceParser(index < data.length && data[index++] == ']', "Invalid array key declaration");
 			void update(string key) {
 				auto exist = key in *current;
 				if(exist) {
 					current = &((*exist).table());
 				} else {
-					set(key, TOMLValue(TOML_TYPE.TABLE));
+					set([key], TOMLValue(TOML_TYPE.TABLE));
 					current = &((*current)[key].table());
 				}
 			}
@@ -831,14 +846,16 @@ TOMLDocument parseTOML(string data, TOMLOptions options=TOMLOptions.none) {
 					//TODO must be an array
 					(*exist).array ~= TOMLValue(TOML_TYPE.TABLE);
 				} else {
-					set(keys[$-1], TOMLValue([TOMLValue(TOML_TYPE.TABLE)]));
+					set([keys[$-1]], TOMLValue([TOMLValue(TOML_TYPE.TABLE)]));
 				}
 				current = &((*current)[keys[$-1]].array[$-1].table());
 			} else {
+				enforceParser(!tableNames.canFind(keys), "Table name has already been directly defined");
+				tableNames ~= keys;
 				update(keys[$-1]);
 			}
 		} else {
-			readKeyValue(readKey());
+			readKeyValue(readKeys());
 		}
 
 	}
@@ -993,8 +1010,6 @@ unittest {
 	assert(parseTOML(`'' = 'blank'`)[""] == "blank");
 
 	// dotted keys
-	//FIXME #4
-	/+
 	doc = parseTOML(`
 		name = "Orange"
 		physical.color = "orange"
@@ -1003,7 +1018,7 @@ unittest {
 	`);
 	assert(doc["name"] == "Orange");
 	assert(doc["physical"] == ["color": "orange", "shape": "round"]);
-	assert(doc["site"]["google.com"] == true);+/
+	assert(doc["site"]["google.com"] == true);
 
 	// ------
 	// String
@@ -1197,7 +1212,6 @@ trimmed in raw strings.
 	assert(doc["odt2"] == SysTime.fromISOExtString("1979-05-27T00:32:00-07:00"));
 	assert(doc["odt3"] == SysTime.fromISOExtString("1979-05-27T00:32:00.999999-07:00"));
 
-	//FIXME #6
 	doc = parseTOML(`odt4 = 1979-05-27 07:32:00Z`);
 	assert(doc["odt4"] == SysTime.fromISOExtString("1979-05-27T07:32:00Z"));
 
@@ -1286,12 +1300,11 @@ trimmed in raw strings.
 	assert(doc["table-1"] == ["key1": TOMLValue("some string"), "key2": TOMLValue(123)]);
 	assert(doc["table-2"] == ["key1": TOMLValue("another string"), "key2": TOMLValue(456)]);
 
-	//FIXME #4
-	/+doc = parseTOML(`
+	doc = parseTOML(`
 		[dog."tater.man"]
 		type.name = "pug"
 	`);
-	assert(doc["dog"]["tater.man"]["type"]["name"] == "pug");+/
+	assert(doc["dog"]["tater.man"]["type"]["name"] == "pug");
 
 	doc = parseTOML(`
 		[a.b.c]            # this is best practice
@@ -1322,8 +1335,7 @@ trimmed in raw strings.
 	assert(doc["a"]["b"]["c"] == 1);
 	assert(doc["a"]["d"] == 2);
 
-	//FIXME #7
-	/+testError({
+	testError({
 		parseTOML(`
 			# DO NOT DO THIS
 				
@@ -1333,10 +1345,9 @@ trimmed in raw strings.
 			[a]
 			c = 2
 		`);
-	});+/
+	});
 
-	//FIXME #7
-	/+testError({
+	testError({
 		parseTOML(`
 			# DO NOT DO THIS EITHER
 
@@ -1346,7 +1357,7 @@ trimmed in raw strings.
 			[a.b]
 			c = 2
 		`);
-	});+/
+	});
 
 	testError({ parseTOML(`[]`); });
 	testError({ parseTOML(`[a.]`); });
@@ -1358,8 +1369,7 @@ trimmed in raw strings.
 	// Inline Table
 	// ------------
 
-	//FIXME #4
-	/+doc = parseTOML(`
+	doc = parseTOML(`
 		name = { first = "Tom", last = "Preston-Werner" }
 		point = { x = 1, y = 2 }
 		animal = { type.name = "pug" }
@@ -1367,7 +1377,7 @@ trimmed in raw strings.
 	assert(doc["name"]["first"] == "Tom");
 	assert(doc["name"]["last"] == "Preston-Werner");
 	assert(doc["point"] == ["x": 1, "y": 2]);
-	assert(doc["animal"]["type"]["name"] == "pug");+/
+	assert(doc["animal"]["type"]["name"] == "pug");
 
 	// ---------------
 	// Array of Tables
@@ -1392,7 +1402,7 @@ trimmed in raw strings.
 	assert(doc["products"][2] == ["name": TOMLValue("Nail"), "sku": TOMLValue(284758393), "color": TOMLValue("gray")]);
 
 	// nested
-	//FIXME #7
+	//FIXME #8
 	/+doc = parseTOML(`
 		[[fruit]]
 		  name = "apple"
@@ -1421,7 +1431,7 @@ trimmed in raw strings.
 	assert(doc["fruits"][0]["variety"][0]["name"] == "granny smith");
 	assert(doc["fruits"][1] == ["name": TOMLValue("banana"), "variety": TOMLValue(["name": "plantain"])]);+/
 
-	//FIXME #7
+	//FIXME #8
 	/+testError({
 		parseTOML(`
 			# INVALID TOML DOC
