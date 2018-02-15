@@ -654,7 +654,7 @@ TOMLDocument parseTOML(string data) {
 			}
 			ret = appender.data;
 		}
-		enforceParser(ret.length != 0, "Key is empty or contains invalid characters");
+			enforceParser(ret.length != 0, "Key contains invalid characters");
 		return ret;
 	}
 
@@ -935,9 +935,8 @@ unittest {
 	testError({ parseTOML(`= "no key name" # INVALID`); });
 
 	// empty key
-	//FIXME #3
-	//assert(parseTOML(`"" = "blank"`)[""] == "blank");
-	//assert(parseTOML(`'' = 'blank'`)[""] == "blank");
+	assert(parseTOML(`"" = "blank"`)[""] == "blank");
+	assert(parseTOML(`'' = 'blank'`)[""] == "blank");
 
 	// dotted keys
 	//FIXME #4
