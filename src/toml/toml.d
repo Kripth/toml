@@ -590,9 +590,9 @@ TOMLDocument parseTOML(string data) {
 
 	TOMLValue readSpecial() {
 		immutable start = index;
-		while(index < data.length && !" \t\r\n,]}#".canFind(data[index])) index++;
-		enforceParser(start != index, "Invalid empty value");
-		string ret = data[start..index];
+		while(index < data.length && !"\t\r\n,]}#".canFind(data[index])) index++;
+		string ret = data[start..index].strip; //TODO only remove whitespaces at the end of the string
+		enforceParser(ret.length > 0, "Invalid empty value");
 		switch(ret) {
 			case "true":
 				return TOMLValue(true);
@@ -612,12 +612,14 @@ TOMLDocument parseTOML(string data) {
 				try {
 					if(ret.length >= 10 && ret[4] == '-' && ret[7] == '-') {
 						// date or datetime
-						if(ret.length >= 19 && ret[10] == 'T' && ret[13] == ':' && ret[16] == ':') {
+						if(ret.length >= 19 && (ret[10] == 'T' || ret[10] == ' ') && ret[13] == ':' && ret[16] == ':') {
 							// datetime
+							if(ret[10] == ' ') ret = ret[0..10] ~ 'T' ~ ret[11..$];
 							if(ret[19..$].canFind("-") || ret[$-1] == 'Z') {
 								// has timezone
 								return TOMLValue(SysTime.fromISOExtString(ret));
 							} else {
+								// is space allowed instead of T?
 								return TOMLValue(DateTime.fromISOExtString(ret));
 							}
 						} else {
@@ -1135,8 +1137,8 @@ trimmed in raw strings.
 	assert(doc["odt3"] == SysTime.fromISOExtString("1979-05-27T00:32:00.999999-07:00"));
 
 	//FIXME #6
-	//doc = parseTOML(`odt4 = 1979-05-27 07:32:00Z`);
-	//assert(doc["odt4"] == SysTime.fromISOExtString("1979-05-27T07:32:00Z"));
+	doc = parseTOML(`odt4 = 1979-05-27 07:32:00Z`);
+	assert(doc["odt4"] == SysTime.fromISOExtString("1979-05-27T07:32:00Z"));
 
 	// ---------------
 	// Local Date-Time
