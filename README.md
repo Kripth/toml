@@ -35,7 +35,3 @@ doc = parseTOML(cast(string)read("/path/to/file.toml"));
 # Conversion
 
 - [toml:json](json)
-
-# Missing features
-
-- Nested array of tables

@@ -838,6 +838,53 @@ unittest {
 	// https://github.com/toml-lang/toml/blob/master/README.md
 
 	doc = parseTOML(`
+		# This is a TOML document.
+
+		title = "TOML Example"
+
+		[owner]
+		name = "Tom Preston-Werner"
+		dob = 1979-05-27T07:32:00-08:00 # First class dates
+
+		[database]
+		server = "192.168.1.1"
+		ports = [ 8001, 8001, 8002 ]
+		connection_max = 5000
+		enabled = true
+
+		[servers]
+
+		  # Indentation (tabs and/or spaces) is allowed but not required
+		  [servers.alpha]
+		  ip = "10.0.0.1"
+		  dc = "eqdc10"
+
+		  [servers.beta]
+		  ip = "10.0.0.2"
+		  dc = "eqdc10"
+
+		[clients]
+		data = [ ["gamma", "delta"], [1, 2] ]
+
+		# Line breaks are OK when inside arrays
+		hosts = [
+		  "alpha",
+		  "omega"
+		]
+	`);
+	assert(doc["title"] == "TOML Example");
+	assert(doc["owner"]["name"] == "Tom Preston-Werner");
+	assert(doc["owner"]["dob"] == SysTime.fromISOExtString("1979-05-27T07:32:00-08:00"));
+	assert(doc["database"]["server"] == "192.168.1.1");
+	assert(doc["database"]["ports"] == [8001, 8001, 8002]);
+	assert(doc["database"]["connection_max"] == 5000);
+	assert(doc["database"]["enabled"] == true);
+	//TODO
+	assert(doc["clients"]["data"][0] == ["gamma", "delta"]);
+	assert(doc["clients"]["data"][1] == [1, 2]);
+	assert(doc["clients"]["hosts"] == ["alpha", "omega"]);
+
+	doc = parseTOML(`
 		# This is a full-line comment
 		key = "value"
 	`);
@@ -851,41 +898,74 @@ unittest {
 		assert(v.str == "value");
 	}
 
+	//FIXME #2
+	//testError({ parseTOML(`key = # INVALID`); });
+
+	// ----
+	// Keys
+	// ----
+
+	// bare keys
 	doc = parseTOML(`
 		key = "value"
 		bare_key = "value"
 		bare-key = "value"
 		1234 = "value"
-		
+	`);
+	assert(doc["key"] == "value");
+	assert(doc["bare_key"] == "value");
+	assert(doc["bare-key"] == "value");
+	assert(doc["1234"] == "value");
+
+	// quoted keys
+	doc = parseTOML(`
 		"127.0.0.1" = "value"
 		"character encoding" = "value"
 		"ʎǝʞ" = "value"
 		'key2' = "value"
 		'quoted "value"' = "value"
 	`);
-	assert(doc["key"] == "value");
-	assert(doc["bare_key"] == "value");
-	assert(doc["bare-key"] == "value");
-	assert(doc["1234"] == "value");
 	assert(doc["127.0.0.1"] == "value");
 	assert(doc["character encoding"] == "value");
 	assert(doc["ʎǝʞ"] == "value");
 	assert(doc["key2"] == "value");
 	assert(doc["quoted \"value\""] == "value");
 
-	testError({ parseTOML(`= "no key name"`); });
+	// no key name
+	testError({ parseTOML(`= "no key name" # INVALID`); });
 
+	// empty key
+	//FIXME #3
+	//assert(parseTOML(`"" = "blank"`)[""] == "blank");
+	//assert(parseTOML(`'' = 'blank'`)[""] == "blank");
+
+	// dotted keys
+	//FIXME #4
+	/+
+	doc = parseTOML(`
+		name = "Orange"
+		physical.color = "orange"
+		physical.shape = "round"
+		site."google.com" = true
+	`);
+	assert(doc["name"] == "Orange");
+	assert(doc["physical"] == ["color": "orange", "shape": "round"]);
+	assert(doc["site"]["google.com"] == true);+/
+
+	// ------
+	// String
+	// ------
+
+	// basic strings
 	doc = parseTOML(`str = "I'm a string. \"You can quote me\". Name\tJos\u00E9\nLocation\tSF."`);
 	assert(doc["str"] == "I'm a string. \"You can quote me\". Name\tJosé\nLocation\tSF.");
 
+	// multi-line basic strings
 	doc = parseTOML(`str1 = """
 Roses are red
 Violets are blue"""`);
-	version(Posix) {
-		assert(doc["str1"] == "Roses are red\nViolets are blue");
-	} else {
-		assert(doc["str1"] == "Roses are red\r\nViolets are blue");
-	}
+	version(Posix) assert(doc["str1"] == "Roses are red\nViolets are blue");
+	else assert(doc["str1"] == "Roses are red\r\nViolets are blue");
 
 	doc = parseTOML(`
 		# The following strings are byte-for-byte equivalent:
@@ -907,6 +987,7 @@ The quick brown \
 	assert(doc["str1"] == doc["str2"]);
 	assert(doc["str1"] == doc["str3"]);
 
+	// literal strings
 	doc = parseTOML(`
 		# What you see is what you get.
 		winpath  = 'C:\Users\nodejs\templates'
@@ -919,6 +1000,7 @@ The quick brown \
 	assert(doc["quoted"] == `Tom "Dubs" Preston-Werner`);
 	assert(doc["regex"] == `<\i\c*\s*>`);
 
+	// multi-line literal strings
 	doc = parseTOML(`
 		regex2 = '''I [dw]on't need \d{2} apples'''
 		lines  = '''
@@ -929,6 +1011,10 @@ trimmed in raw strings.
 '''`);
 	assert(doc["regex2"] == `I [dw]on't need \d{2} apples`);
 	assert(doc["lines"] == "The first newline is" ~ newline ~ "trimmed in raw strings." ~ newline ~ "   All other whitespace" ~ newline ~ "   is preserved." ~ newline);
+
+	// -------
+	// Integer
+	// -------
 
 	doc = parseTOML(`
 		int1 = +99
@@ -950,6 +1036,31 @@ trimmed in raw strings.
 	assert(doc["int5"] == 1_000);
 	assert(doc["int6"] == 5_349_221);
 	assert(doc["int7"] == 1_2_3_4_5);
+
+	//FIXME #5
+	/+doc = parseTOML(`
+		# hexadecimal with prefix 0x
+		hex1 = 0xDEADBEEF
+		hex2 = 0xdeadbeef
+		hex3 = 0xdead_beef
+
+		# octal with prefix 0o
+		oct1 = 0o01234567
+		oct2 = 0o755 # useful for Unix file permissions
+
+		# binary with prefix 0b
+		bin1 = 0b11010110
+	`);
+	assert(doc["hex1"] == 0xDEADBEEF);
+	assert(doc["hex2"] == 0xdeadbeef);
+	assert(doc["hex3"] == 0xdead_beef);
+	assert(doc["oct1"] == 342391);
+	assert(doc["oct2"] == 429);
+	assert(doc["bin1"] == 0b11010110);+/
+
+	// -----
+	// Float
+	// -----
 
 	doc = parseTOML(`
 		# fractional
@@ -995,6 +1106,10 @@ trimmed in raw strings.
 	assert(doc["sf5"].floating.isNaN());
 	assert(doc["sf6"].floating.isNaN());
 
+	// -------
+	// Boolean
+	// -------
+
 	doc = parseTOML(`
 		bool1 = true
 		bool2 = false
@@ -1002,6 +1117,10 @@ trimmed in raw strings.
 	assert(doc["bool1"].type == TOML_TYPE.BOOL);
 	assert(doc["bool1"].boolean == true);
 	assert(doc["bool2"] == false);
+
+	// ----------------
+	// Offset Date-Time
+	// ----------------
 
 	doc = parseTOML(`
 		odt1 = 1979-05-27T07:32:00Z
@@ -1013,6 +1132,14 @@ trimmed in raw strings.
 	assert(doc["odt2"] == SysTime.fromISOExtString("1979-05-27T00:32:00-07:00"));
 	assert(doc["odt3"] == SysTime.fromISOExtString("1979-05-27T00:32:00.999999-07:00"));
 
+	//FIXME #6
+	//doc = parseTOML(`odt4 = 1979-05-27 07:32:00Z`);
+	//assert(doc["odt4"] == SysTime.fromISOExtString("1979-05-27T07:32:00Z"));
+
+	// ---------------
+	// Local Date-Time
+	// ---------------
+
 	doc = parseTOML(`
 		ldt1 = 1979-05-27T07:32:00
 		ldt2 = 1979-05-27T00:32:00.999999
@@ -1021,11 +1148,19 @@ trimmed in raw strings.
 	assert(doc["ldt1"].localDatetime == DateTime.fromISOExtString("1979-05-27T07:32:00"));
 	assert(doc["ldt2"] == DateTime.fromISOExtString("1979-05-27T00:32:00.999999"));
 
+	// ----------
+	// Local Date
+	// ----------
+
 	doc = parseTOML(`
 		ld1 = 1979-05-27
 	`);
 	assert(doc["ld1"].type == TOML_TYPE.LOCAL_DATE);
 	assert(doc["ld1"].localDate == Date.fromISOExtString("1979-05-27"));
+
+	// ----------
+	// Local Time
+	// ----------
 
 	doc = parseTOML(`
 		lt1 = 07:32:00
@@ -1035,6 +1170,10 @@ trimmed in raw strings.
 	assert(doc["lt1"].localTime == TimeOfDay.fromISOExtString("07:32:00"));
 	assert(doc["lt2"] == TimeOfDay.fromISOExtString("00:32:00.999999"));
 	assert(doc["lt2"].localTime.fracSecs.total!"msecs" == 999999);
+
+	// -----
+	// Array
+	// -----
 
 	doc = parseTOML(`
 		arr1 = [ 1, 2, 3 ]
@@ -1065,6 +1204,10 @@ trimmed in raw strings.
 	assert(doc["arr7"] == [1, 2, 3]);
 	assert(doc["arr8"] == [1, 2]);
 
+	// -----
+	// Table
+	// -----
+
 	doc = parseTOML(`
 		[table-1]
 		key1 = "some string"
@@ -1075,14 +1218,15 @@ trimmed in raw strings.
 		key2 = 456
 	`);
 	assert(doc["table-1"].type == TOML_TYPE.TABLE);
-	//assert(doc["table-1"].table == ["key1": TOMLValue("some string"), "key2": TOMLValue(123)]); // object.Error@(0): TypeInfo.equals is not implemented
+	assert(doc["table-1"] == ["key1": TOMLValue("some string"), "key2": TOMLValue(123)]);
 	assert(doc["table-2"] == ["key1": TOMLValue("another string"), "key2": TOMLValue(456)]);
 
-	doc = parseTOML(`
+	//FIXME #4
+	/+doc = parseTOML(`
 		[dog."tater.man"]
-		type = "pug"
+		type.name = "pug"
 	`);
-	assert(doc["dog"]["tater.man"]["type"] == "pug");
+	assert(doc["dog"]["tater.man"]["type"]["name"] == "pug");+/
 
 	doc = parseTOML(`
 		[a.b.c]            # this is best practice
@@ -1113,29 +1257,31 @@ trimmed in raw strings.
 	assert(doc["a"]["b"]["c"] == 1);
 	assert(doc["a"]["d"] == 2);
 
+	//FIXME #7
 	/+testError({
-			parseTOML(`
-				# DO NOT DO THIS
-					
-				[a]
-				b = 1
+		parseTOML(`
+			# DO NOT DO THIS
 				
-				[a]
-				c = 2
-			`);
-		});
+			[a]
+			b = 1
+			
+			[a]
+			c = 2
+		`);
+	});+/
 
-	testError({
-			parseTOML(`
-				# DO NOT DO THIS EITHER
+	//FIXME #7
+	/+testError({
+		parseTOML(`
+			# DO NOT DO THIS EITHER
 
-				[a]
-				b = 1
+			[a]
+			b = 1
 
-				[a.b]
-				c = 2
-			`);
-		});+/
+			[a.b]
+			c = 2
+		`);
+	});+/
 
 	testError({ parseTOML(`[]`); });
 	testError({ parseTOML(`[a.]`); });
@@ -1143,24 +1289,25 @@ trimmed in raw strings.
 	testError({ parseTOML(`[.b]`); });
 	testError({ parseTOML(`[.]`); });
 
-	doc = parseTOML(`
+	// ------------
+	// Inline Table
+	// ------------
+
+	//FIXME #4
+	/+doc = parseTOML(`
 		name = { first = "Tom", last = "Preston-Werner" }
 		point = { x = 1, y = 2 }
+		animal = { type.name = "pug" }
 	`);
 	assert(doc["name"]["first"] == "Tom");
 	assert(doc["name"]["last"] == "Preston-Werner");
 	assert(doc["point"] == ["x": 1, "y": 2]);
+	assert(doc["animal"]["type"]["name"] == "pug");+/
 
-	doc = parseTOML(`
-		points = [ { x = 1, y = 2, z = 3 },
-			{ x = 7, y = 8, z = 9 },
-			{ x = 2, y = 4, z = 8 } ]
-	`);
-	assert(doc["points"].array.length == 3);
-	assert(doc["points"][0] == ["x": 1, "y": 2, "z": 3]);
-	assert(doc["points"][1] == ["x": 7, "y": 8, "z": 9]);
-	assert(doc["points"][2] == ["x": 2, "y": 4, "z": 8]);
-
+	// ---------------
+	// Array of Tables
+	// ---------------
+	
 	doc = parseTOML(`
 		[[products]]
 		name = "Hammer"
@@ -1178,7 +1325,65 @@ trimmed in raw strings.
 	assert(doc["products"][0] == ["name": TOMLValue("Hammer"), "sku": TOMLValue(738594937)]);
 	assert(doc["products"][1] == (TOMLValue[string]).init);
 	assert(doc["products"][2] == ["name": TOMLValue("Nail"), "sku": TOMLValue(284758393), "color": TOMLValue("gray")]);
-	
+
+	// nested
+	//FIXME #7
+	/+doc = parseTOML(`
+		[[fruit]]
+		  name = "apple"
+
+  		[fruit.physical]
+		    color = "red"
+			shape = "round"
+
+		  [[fruit.variety]]
+		    name = "red delicious"
+
+		  [[fruit.variety]]
+		    name = "granny smith"
+
+		[[fruit]]
+		  name = "banana"
+
+		  [[fruit.variety]]
+		    name = "plantain"
+	`);
+	assert(doc["fruits"].type == TOML_TYPE.ARRAY);
+	assert(doc["fruits"].array.length == 2);
+	assert(doc["fruits"][0]["name"] == "apple");
+	assert(doc["fruits"][0]["physical"] == ["color": "red", "shape": "round"]);
+	assert(doc["fruits"][0]["variety"][0] == ["name": "red delicious"]);
+	assert(doc["fruits"][0]["variety"][0]["name"] == "granny smith");
+	assert(doc["fruits"][1] == ["name": TOMLValue("banana"), "variety": TOMLValue(["name": "plantain"])]);+/
+
+	//FIXME #7
+	/+testError({
+		parseTOML(`
+			# INVALID TOML DOC
+			[[fruit]]
+			  name = "apple"
+
+			  [[fruit.variety]]
+			    name = "red delicious"
+
+			  # This table conflicts with the previous table
+			  [fruit.variety]
+			    name = "granny smith"
+		`);
+	});+/
+
+	doc = parseTOML(`
+		points = [ { x = 1, y = 2, z = 3 },
+			{ x = 7, y = 8, z = 9 },
+			{ x = 2, y = 4, z = 8 } ]
+	`);
+	assert(doc["points"].array.length == 3);
+	assert(doc["points"][0] == ["x": 1, "y": 2, "z": 3]);
+	assert(doc["points"][1] == ["x": 7, "y": 8, "z": 9]);
+	assert(doc["points"][2] == ["x": 2, "y": 4, "z": 8]);
+
+
+
 	// additional tests for code coverage
 
 	assert(TOMLValue(42) == 42.0);
