@@ -591,7 +591,7 @@ TOMLDocument parseTOML(string data) {
 	TOMLValue readSpecial() {
 		immutable start = index;
 		while(index < data.length && !" \t\r\n,]}#".canFind(data[index])) index++;
-		enforceParser(start != index, "Invalid empty type");
+		enforceParser(start != index, "Invalid empty value");
 		string ret = data[start..index];
 		switch(ret) {
 			case "true":
@@ -659,63 +659,66 @@ TOMLDocument parseTOML(string data) {
 	}
 
 	TOMLValue readValue() {
-		switch(data[index++]) {
-			case '"':
-				if(index + 2 <= data.length && data[index..index+2] == "\"\"") {
-					index += 2;
-					return TOMLValue(readQuotedString!true());
-				} else {
-					return TOMLValue(readQuotedString!false());
-				}
-			case '\'':
-				if(index + 2 <= data.length && data[index..index+2] == "''") {
-					index += 2;
-					return TOMLValue(readSimpleQuotedString!true());
-				} else {
-					return TOMLValue(readSimpleQuotedString!false());
-				}
-			case '[':
-				clear();
-				TOMLValue[] array;
-				bool comma = true;
-				while(data[index] != ']') { //TODO check range error
-					enforceParser(comma, "Elements of the array must be separated with a comma");
-					array ~= readValue();
-					clear!false(); // spaces allowed between elements and commas
-					if(data[index] == ',') { //TODO check range error
-						index++;
-						comma = true;
+		if(index < data.length) {
+			switch(data[index++]) {
+				case '"':
+					if(index + 2 <= data.length && data[index..index+2] == "\"\"") {
+						index += 2;
+						return TOMLValue(readQuotedString!true());
 					} else {
-						comma = false;
+						return TOMLValue(readQuotedString!false());
 					}
-					clear(); // spaces and newlines allowed between elements
-				}
-				index++;
-				return TOMLValue(array);
-			case '{':
-				clear!false();
-				TOMLValue[string] table;
-				bool comma = true;
-				while(data[index] != '}') { //TODO check range error
-					enforceParser(comma, "Elements of the table must be separated with a comma");
-					immutable key = readKey();
-					enforceParser(clear!false() && data[index++] == '=' && clear!false(), "Expected type after key declaration");
-					table[key] = readValue();
-					enforceParser(clear!false(), "Expected ',' or '}' but found " ~ (index < data.length ? "EOL" : "EOF"));
-					if(data[index] == ',') {
-						index++;
-						comma = true;
+				case '\'':
+					if(index + 2 <= data.length && data[index..index+2] == "''") {
+						index += 2;
+						return TOMLValue(readSimpleQuotedString!true());
 					} else {
-						comma = false;
+						return TOMLValue(readSimpleQuotedString!false());
 					}
+				case '[':
+					clear();
+					TOMLValue[] array;
+					bool comma = true;
+					while(data[index] != ']') { //TODO check range error
+						enforceParser(comma, "Elements of the array must be separated with a comma");
+						array ~= readValue();
+						clear!false(); // spaces allowed between elements and commas
+						if(data[index] == ',') { //TODO check range error
+							index++;
+							comma = true;
+						} else {
+							comma = false;
+						}
+						clear(); // spaces and newlines allowed between elements
+					}
+					index++;
+					return TOMLValue(array);
+				case '{':
 					clear!false();
-				}
-				index++;
-				return TOMLValue(table);
-			default:
-				index--;
-				return readSpecial();
+					TOMLValue[string] table;
+					bool comma = true;
+					while(data[index] != '}') { //TODO check range error
+						enforceParser(comma, "Elements of the table must be separated with a comma");
+						immutable key = readKey();
+						enforceParser(clear!false() && data[index++] == '=' && clear!false(), "Expected type after key declaration");
+						table[key] = readValue();
+						enforceParser(clear!false(), "Expected ',' or '}' but found " ~ (index < data.length ? "EOL" : "EOF"));
+						if(data[index] == ',') {
+							index++;
+							comma = true;
+						} else {
+							comma = false;
+						}
+						clear!false();
+					}
+					index++;
+					return TOMLValue(table);
+				default:
+					index--;
+					break;
+			}
 		}
+		return readSpecial();
 	}
 
 	void readKeyValue(string key) {
@@ -898,8 +901,8 @@ unittest {
 		assert(v.str == "value");
 	}
 
-	//FIXME #2
-	//testError({ parseTOML(`key = # INVALID`); });
+	testError({ parseTOML(`key = # INVALID`); });
+	testError({ parseTOML("key =\nkey2 = 'test'"); });
 
 	// ----
 	// Keys
