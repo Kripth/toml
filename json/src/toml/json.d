@@ -22,7 +22,6 @@ import toml.toml : TOMLDocument, TOMLValue, TOML_TYPE, TOMLException;
  */
 JSONValue toJSON(TOMLValue toml) {
 	final switch(toml.type) with(TOML_TYPE) {
-		case BOOL: return JSONValue(toml.boolean);
 		case STRING: return JSONValue(toml.str);
 		case INTEGER: return JSONValue(toml.integer);
 		case FLOAT: return JSONValue(toml.floating);
@@ -42,6 +41,8 @@ JSONValue toJSON(TOMLValue toml) {
 				ret[key] = toJSON(value);
 			}
 			return JSONValue(ret);
+		case TRUE: return JSONValue(true);
+		case FALSE: return JSONValue(false);
 	}
 }
 
@@ -56,7 +57,6 @@ unittest {
 	import std.datetime : SysTime, Date;
 	import toml.datetime : DateTime, TimeOfDay;
 
-	assert(toJSON(TOMLValue(true)).type == JSON_TYPE.TRUE);
 	assert(toJSON(TOMLValue("string")).str == "string");
 	assert(toJSON(TOMLValue(42)) == JSONValue(42));
 	assert(toJSON(TOMLValue(.1)) == JSONValue(.1));
@@ -66,6 +66,9 @@ unittest {
 	assert(toJSON(TOMLValue(TimeOfDay.fromISOExtString("07:32:00"))).str == "07:32:00");
 	assert(toJSON(TOMLValue([1, 2, 3])) == JSONValue([1, 2, 3]));
 	assert(toJSON(TOMLDocument(["a": TOMLValue(0), "b": TOMLValue(1)])) == JSONValue(["a": 0, "b": 1]));
+	assert(toJSON(TOMLValue(true)).type == JSON_TYPE.TRUE);
+	assert(toJSON(TOMLValue(false)).type == JSON_TYPE.FALSE);
+	
 }
 
 /**
@@ -107,7 +110,7 @@ unittest {
 		toTOML(JSONValue.init); assert(0);
 	} catch(TOMLException) {}
 
-	assert(toTOML(JSONValue(true)).type == TOML_TYPE.BOOL);
+	assert(toTOML(JSONValue(true)).type == TOML_TYPE.TRUE);
 	assert(toTOML(JSONValue(false)) == false);
 	assert(toTOML(JSONValue("test")) == "test");
 	assert(toTOML(JSONValue(42)) == 42);
