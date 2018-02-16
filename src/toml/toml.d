@@ -17,7 +17,7 @@ import std.array : Appender;
 import std.ascii : newline;
 import std.conv : to;
 import std.datetime : SysTime, DateTimeD = DateTime, Date, TimeOfDayD = TimeOfDay;
-import std.exception : enforce;
+import std.exception : enforce, assertThrown;
 import std.math : isNaN, isFinite;
 import std.string : join, strip, replace, indexOf;
 import std.traits : isNumeric, isIntegral, isFloatingPoint, isArray, isAssociativeArray, KeyType;
@@ -41,8 +41,7 @@ enum TOMLOptions {
  */
 enum TOML_TYPE : byte {
 
-	BOOL,               /// Type of a TOMLValue.
-	STRING,             /// ditto
+	STRING,             /// Indicates the type of a TOMLValue.
 	INTEGER,            /// ditto
 	FLOAT,              /// ditto
 	OFFSET_DATETIME,    /// ditto
@@ -50,7 +49,9 @@ enum TOML_TYPE : byte {
 	LOCAL_DATE,         /// ditto
 	LOCAL_TIME,         /// ditto
 	ARRAY,              /// ditto
-	TABLE               /// ditto
+	TABLE,              /// ditto
+	TRUE,				/// ditto
+	FALSE				/// ditto
 
 }
 
@@ -91,7 +92,6 @@ struct TOMLDocument {
 struct TOMLValue {
 
 	private union Store {
-		bool boolean;
 		string str;
 		long integer;
 		double floating;
@@ -105,10 +105,6 @@ struct TOMLValue {
 	private Store store;
 	private TOML_TYPE _type;
 
-	public inout pure nothrow @property @safe @nogc TOML_TYPE type() {
-		return this._type;
-	}
-
 	public this(T)(T value) {
 		static if(is(T == TOML_TYPE)) {
 			this._type = value;
@@ -116,13 +112,9 @@ struct TOMLValue {
 			this.assign(value);
 		}
 	}
-
-	/**
-	 * Throws: TOMLException if type is not TOML_TYPE.BOOL
-	 */
-	public inout @property @trusted bool boolean() {
-		enforce!TOMLException(this._type == TOML_TYPE.BOOL, "TOMLValue is not a boolean");
-		return this.store.boolean;
+	
+	public inout pure nothrow @property @safe @nogc TOML_TYPE type() {
+		return this._type;
 	}
 	
 	/**
@@ -227,9 +219,6 @@ struct TOMLValue {
 		static if(is(T == TOMLValue)) {
 			this.store = value.store;
 			this._type = value._type;
-		} else static if(is(T == bool)) {
-			this.store.boolean = value;
-			this._type = TOML_TYPE.BOOL;
 		} else static if(is(T : string)) {
 			this.store.str = value;
 			this._type = TOML_TYPE.STRING;
@@ -286,6 +275,8 @@ struct TOMLValue {
 			}
 			this.store.table = data;
 			this._type = TOML_TYPE.TABLE;
+		} else static if(is(T == bool)) {
+			_type = value ? TOML_TYPE.TRUE : TOML_TYPE.FALSE;
 		} else {
 			static assert(0);
 		}
@@ -295,7 +286,6 @@ struct TOMLValue {
 		static if(is(T == TOMLValue)) {
 			if(this._type != value._type) return false;
 			final switch(this.type) with(TOML_TYPE) {
-				case BOOL: return this.store.boolean == value.store.boolean;
 				case STRING: return this.store.str == value.store.str;
 				case INTEGER: return this.store.integer == value.store.integer;
 				case FLOAT: return this.store.floating == value.store.floating;
@@ -306,12 +296,12 @@ struct TOMLValue {
 				case ARRAY: return this.store.array == value.store.array;
 				//case TABLE: return this.store.table == value.store.table; // causes errors
 				case TABLE: return this.opEquals(value.store.table);
+				case TRUE: case FALSE: return true;
 			}
 		} else static if(is(T : string)) {
 			return this._type == TOML_TYPE.STRING && this.store.str == value;
-		} else static if(isNumeric!T || is(T == bool)) {
-			if(this._type == TOML_TYPE.BOOL) return this.store.boolean == value;
-			else if(this._type == TOML_TYPE.INTEGER) return this.store.integer == value;
+		} else static if(isNumeric!T ) {
+			if(this._type == TOML_TYPE.INTEGER) return this.store.integer == value;
 			else if(this._type == TOML_TYPE.FLOAT) return this.store.floating == value;
 			else return false;
 		} else static if(is(T == SysTime)) {
@@ -339,6 +329,8 @@ struct TOMLValue {
 				if(cmp is null || v != *cmp) return false;
 			}
 			return true;
+		} else static if(is(T == bool)) {
+			return value ? _type == TOML_TYPE.TRUE : _type == TOML_TYPE.FALSE;
 		} else {
 			return false;
 		}
@@ -346,9 +338,6 @@ struct TOMLValue {
 
 	public inout void append(ref Appender!string appender) {
 		final switch(this._type) with(TOML_TYPE) {
-			case BOOL:
-				appender.put(this.store.boolean.to!string);
-				break;
 			case STRING:
 				appender.put(formatString(this.store.str));
 				break;
@@ -391,6 +380,12 @@ struct TOMLValue {
 					if(++i != this.store.table.length) appender.put(", ");
 				}
 				appender.put(" }");
+				break;
+			case TRUE:
+				appender.put("true");
+				break;
+			case FALSE:
+				appender.put("false");
 				break;
 		}
 	}
@@ -898,12 +893,6 @@ version(Windows) {
 
 unittest {
 
-	void testError(void function() func) {
-		try {
-			func(); assert(0); // assert should never be reached
-		} catch(TOMLException) {}
-	}
-
 	TOMLDocument doc;
 
 	// tests from the official documentation
@@ -970,8 +959,8 @@ unittest {
 		assert(v.str == "value");
 	}
 
-	testError({ parseTOML(`key = # INVALID`); });
-	testError({ parseTOML("key =\nkey2 = 'test'"); });
+	assertThrown!TOMLException({ parseTOML(`key = # INVALID`); }());
+	assertThrown!TOMLException({ parseTOML("key =\nkey2 = 'test'"); }());
 
 	// ----
 	// Keys
@@ -1004,7 +993,7 @@ unittest {
 	assert(doc["quoted \"value\""] == "value");
 
 	// no key name
-	testError({ parseTOML(`= "no key name" # INVALID`); });
+	assertThrown!TOMLException({ parseTOML(`= "no key name" # INVALID`); }());
 
 	// empty key
 	assert(parseTOML(`"" = "blank"`)[""] == "blank");
@@ -1107,15 +1096,15 @@ trimmed in raw strings.
 	assert(doc["int7"] == 1_2_3_4_5);
 
 	// leading 0s not allowed
-	testError({ parseTOML(`invalid = 01`); });
+	assertThrown!TOMLException({ parseTOML(`invalid = 01`); }());
 
 	// underscores must be enclosed in numbers
-	testError({ parseTOML(`invalid = _123`); });
-	testError({ parseTOML(`invalid = 123_`); });
-	testError({ parseTOML(`invalid = 123__123`); });
-	testError({ parseTOML(`invalid = 0b01_21`); });
-	testError({ parseTOML(`invalid = 0x_deadbeef`); });
-	testError({ parseTOML(`invalid = 0b0101__00`); });
+	assertThrown!TOMLException({ parseTOML(`invalid = _123`); }());
+	assertThrown!TOMLException({ parseTOML(`invalid = 123_`); }());
+	assertThrown!TOMLException({ parseTOML(`invalid = 123__123`); }());
+	assertThrown!TOMLException({ parseTOML(`invalid = 0b01_21`); }());
+	assertThrown!TOMLException({ parseTOML(`invalid = 0x_deadbeef`); }());
+	assertThrown!TOMLException({ parseTOML(`invalid = 0b0101__00`); }());
 
 	doc = parseTOML(`
 		# hexadecimal with prefix 0x
@@ -1137,7 +1126,7 @@ trimmed in raw strings.
 	assert(doc["oct2"] == 493);
 	assert(doc["bin1"] == 0b11010110);
 
-	testError({ parseTOML(`invalid = 0h111`); });
+	assertThrown!TOMLException({ parseTOML(`invalid = 0h111`); }());
 
 	// -----
 	// Float
@@ -1195,8 +1184,9 @@ trimmed in raw strings.
 		bool1 = true
 		bool2 = false
 	`);
-	assert(doc["bool1"].type == TOML_TYPE.BOOL);
-	assert(doc["bool1"].boolean == true);
+	assert(doc["bool1"].type == TOML_TYPE.TRUE);
+	assert(doc["bool2"].type == TOML_TYPE.FALSE);
+	assert(doc["bool1"] == true);
 	assert(doc["bool2"] == false);
 
 	// ----------------
@@ -1269,7 +1259,7 @@ trimmed in raw strings.
 	assert(doc["arr4"] == ["all", "strings", "are the same", "type"]);
 	assert(doc["arr5"] == [TOMLValue([1, 2]), TOMLValue(["a", "b", "c"])]);
 
-	testError({ parseTOML(`arr6 = [ 1, 2.0 ]`); });
+	assertThrown!TOMLException({ parseTOML(`arr6 = [ 1, 2.0 ]`); }());
 
 	doc = parseTOML(`
 		arr7 = [
@@ -1336,7 +1326,7 @@ trimmed in raw strings.
 	assert(doc["a"]["b"]["c"] == 1);
 	assert(doc["a"]["d"] == 2);
 
-	testError({
+	assertThrown!TOMLException({
 		parseTOML(`
 			# DO NOT DO THIS
 				
@@ -1346,9 +1336,9 @@ trimmed in raw strings.
 			[a]
 			c = 2
 		`);
-	});
+	}());
 
-	testError({
+	assertThrown!TOMLException({
 		parseTOML(`
 			# DO NOT DO THIS EITHER
 
@@ -1358,13 +1348,13 @@ trimmed in raw strings.
 			[a.b]
 			c = 2
 		`);
-	});
+	}());
 
-	testError({ parseTOML(`[]`); });
-	testError({ parseTOML(`[a.]`); });
-	testError({ parseTOML(`[a..b]`); });
-	testError({ parseTOML(`[.b]`); });
-	testError({ parseTOML(`[.]`); });
+	assertThrown!TOMLException({ parseTOML(`[]`); }());
+	assertThrown!TOMLException({ parseTOML(`[a.]`); }());
+	assertThrown!TOMLException({ parseTOML(`[a..b]`); }());
+	assertThrown!TOMLException({ parseTOML(`[.b]`); }());
+	assertThrown!TOMLException({ parseTOML(`[.]`); }());
 
 	// ------------
 	// Inline Table
@@ -1431,7 +1421,7 @@ trimmed in raw strings.
 	assert(doc["fruit"][0]["variety"][1]["name"] == "granny smith");
 	assert(doc["fruit"][1] == ["name": TOMLValue("banana"), "variety": TOMLValue([["name": "plantain"]])]);
 
-	testError({
+	assertThrown!TOMLException({
 		parseTOML(`
 			# INVALID TOML DOC
 			[[fruit]]
@@ -1444,7 +1434,7 @@ trimmed in raw strings.
 			  [fruit.variety]
 			    name = "granny smith"
 		`);
-	});
+	}());
 
 	doc = parseTOML(`
 		points = [ { x = 1, y = 2, z = 3 },
@@ -1474,14 +1464,14 @@ trimmed in raw strings.
 		assert(e.position.column == 9 + 3); // 3 tabs
 	}
 
-	testError({ parseTOML(`error = "unterminated`); });
-	testError({ parseTOML(`error = 'unterminated`); });
-	testError({ parseTOML(`error = "\ "`); });
+	assertThrown!TOMLException({ parseTOML(`error = "unterminated`); }());
+	assertThrown!TOMLException({ parseTOML(`error = 'unterminated`); }());
+	assertThrown!TOMLException({ parseTOML(`error = "\ "`); }());
 
-	testError({ parseTOML(`error = truè`); });
-	testError({ parseTOML(`error = falsè`); });
+	assertThrown!TOMLException({ parseTOML(`error = truè`); }());
+	assertThrown!TOMLException({ parseTOML(`error = falsè`); }());
 
-	testError({ parseTOML(`[error`); });
+	assertThrown!TOMLException({ parseTOML(`[error`); }());
 
 	doc = parseTOML(`test = "\\\"\b\t\n\f\r\u0040\U00000040"`);
 	assert(doc["test"] == "\\\"\b\t\n\f\r@@");
