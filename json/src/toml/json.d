@@ -87,19 +87,25 @@ TOMLValue toTOML(JSONValue json) {
 		case INTEGER: return TOMLValue(json.integer);
 		case UINTEGER: return TOMLValue(cast(long)json.uinteger);
 		case FLOAT: return TOMLValue(json.floating);
-		case ARRAY:
-			TOMLValue[] ret;
-			foreach(value ; json.array) {
-				ret ~= toTOML(value);
-			}
-			return TOMLValue(ret);
-		case OBJECT:
-			TOMLValue[string] ret;
-			foreach(key, value; json.object) {
-				ret[key] = toTOML(value);
-			}
-			return TOMLValue(ret);
+		case ARRAY: return TOMLValue(toTOMLArray(json));
+		case OBJECT: return TOMLValue(toTOMLObject(json));
 	}
+}
+
+private TOMLValue[] toTOMLArray(JSONValue json) {
+	TOMLValue[] ret;
+	foreach(value ; json.array) {
+		ret ~= toTOML(value);
+	}
+	return ret;
+}
+
+private TOMLValue[string] toTOMLObject(JSONValue json) {
+	TOMLValue[string] ret;
+	foreach(key, value; json.object) {
+		ret[key] = toTOML(value);
+	}
+	return ret;
 }
 
 ///
