@@ -2,7 +2,7 @@
 
 /**
  * 
- * Tom's Obvious, Minimal Language (v0.4.0).
+ * Tom's Obvious, Minimal Language (v1.0.0).
  *
  * License: $(HTTP https://github.com/Kripth/toml/blob/master/LICENSE, MIT)
  * Authors: Kripth

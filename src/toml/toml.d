@@ -2,7 +2,7 @@
 
 /**
  * 
- * Tom's Obvious, Minimal Language (v0.4.0).
+ * Tom's Obvious, Minimal Language (v1.0.0).
  *
  * License: $(HTTP https://github.com/Kripth/toml/blob/master/LICENSE, MIT)
  * Authors: Kripth
@@ -144,7 +144,7 @@ struct TOMLValue {
 	/**
 	 * Throws: TOMLException if type is not TOML_TYPE.OFFSET_DATETIME
 	 */
-	public @property ref SysTime offsetDatetime() {
+	public @property ref SysTime offsetDatetime() return {
 		enforce!TOMLException(this.type == TOML_TYPE.OFFSET_DATETIME, "TOMLValue is not an offset datetime");
 		return this.store.offsetDatetime;
 	}
@@ -152,7 +152,7 @@ struct TOMLValue {
 	/**
 	 * Throws: TOMLException if type is not TOML_TYPE.LOCAL_DATETIME
 	 */
-	public @property @trusted ref DateTime localDatetime() {
+	public @property @trusted ref DateTime localDatetime() return {
 		enforce!TOMLException(this._type == TOML_TYPE.LOCAL_DATETIME, "TOMLValue is not a local datetime");
 		return this.store.localDatetime;
 	}
@@ -160,7 +160,7 @@ struct TOMLValue {
 	/**
 	 * Throws: TOMLException if type is not TOML_TYPE.LOCAL_DATE
 	 */
-	public @property @trusted ref Date localDate() {
+	public @property @trusted ref Date localDate() return {
 		enforce!TOMLException(this._type == TOML_TYPE.LOCAL_DATE, "TOMLValue is not a local date");
 		return this.store.localDate;
 	}
@@ -168,7 +168,7 @@ struct TOMLValue {
 	/**
 	 * Throws: TOMLException if type is not TOML_TYPE.LOCAL_TIME
 	 */
-	public @property @trusted ref TimeOfDay localTime() {
+	public @property @trusted ref TimeOfDay localTime() return {
 		enforce!TOMLException(this._type == TOML_TYPE.LOCAL_TIME, "TOMLValue is not a local time");
 		return this.store.localTime;
 	}
@@ -176,7 +176,7 @@ struct TOMLValue {
 	/**
 	 * Throws: TOMLException if type is not TOML_TYPE.ARRAY
 	 */
-	public @property @trusted ref TOMLValue[] array() {
+	public @property @trusted ref TOMLValue[] array() return {
 		enforce!TOMLException(this._type == TOML_TYPE.ARRAY, "TOMLValue is not an array");
 		return this.store.array;
 	}
@@ -184,7 +184,7 @@ struct TOMLValue {
 	/**
 	 * Throws: TOMLException if type is not TOML_TYPE.TABLE
 	 */
-	public @property @trusted ref TOMLValue[string] table() {
+	public @property @trusted ref TOMLValue[string] table() return {
 		enforce!TOMLException(this._type == TOML_TYPE.TABLE, "TOMLValue is not a table");
 		return this.store.table;
 	}
@@ -940,7 +940,8 @@ unittest {
 	assert(doc["database"]["ports"] == [8001, 8001, 8002]);
 	assert(doc["database"]["connection_max"] == 5000);
 	assert(doc["database"]["enabled"] == true);
-	//TODO
+	assert(doc["servers"]["alpha"]["ip"] == "10.0.0.1");
+	assert(doc["servers"]["alpha"]["dc"] == "eqdc10");
 	assert(doc["clients"]["data"][0] == ["gamma", "delta"]);
 	assert(doc["clients"]["data"][1] == [1, 2]);
 	assert(doc["clients"]["hosts"] == ["alpha", "omega"]);
@@ -953,7 +954,7 @@ unittest {
 	assert(doc["key"].type == TOML_TYPE.STRING);
 	assert(doc["key"].str == "value");
 
-	foreach (k, v; doc) {
+	foreach(k, v; doc) {
 		assert(k == "key");
 		assert(v.type == TOML_TYPE.STRING);
 		assert(v.str == "value");
@@ -1520,8 +1521,8 @@ trimmed in raw strings.
 	immutable table = TOMLValue(["a": 0, "b": 1]).toString();
 	assert(table == "{ a = 0, b = 1 }" || table == "{ b = 1, a = 0 }");
 
-	foreach(key, value; TOMLValue(["0": 0, "1": 1])) {
-		assert(value == key.to!int);
+	foreach(k, v; TOMLValue(["0": 0, "1": 1])) {
+		assert(v == k.to!int);
 	}
 
 	value = 42;
